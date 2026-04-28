@@ -1,0 +1,326 @@
+---
+title: "Tabels + Models"
+format: 
+  html:
+    toc: true
+    code-fold: true
+    code-summary: "Show Code"
+    self-contained: true
+---
+
+```{r setup}
+
+#| include: false
+#| message: false
+#| warning: false
+
+knitr::opts_chunk$set(
+  eval = T, warning = F, message = F, echo = T, fig.dim = c(12,6), fig.width = 25, fig.height = 10, dpi = 300, fig.pos = "!h"
+)
+
+packages = c("tidyverse","Hmisc","arsenal","kableExtra")
+
+
+
+suppressWarnings(
+  suppressPackageStartupMessages(invisible(lapply(packages, require, character.only = T))))
+
+
+theme_set(theme_minimal()+
+            theme(legend.position = "bottom")+
+            theme(plot.title = element_text(hjust = 0.5, size = 12),
+                  plot.subtitle= element_text(hjust = 0.5, size = 8)))
+
+custom_cat_test <- function(currcol, bycol, 
+                            chisq.correct = FALSE, 
+                            simulate.p.value = FALSE, 
+                            B = 2000, 
+                            wilcox.correct, 
+                            wilcox.exact, 
+                            test.always, 
+                            ...) {
+  # Create the contingency table
+  tab <- table(currcol, bycol)
+  
+  # Attempt chi-square test without continuity correction (as specified)
+  chisq_result <- try(chisq.test(tab, 
+                                 correct = chisq.correct, 
+                                 simulate.p.value = simulate.p.value, 
+                                 B = B),
+                      silent = TRUE)
+  
+  # If the test fails or expected counts are below 5, use Fisher's exact test
+  if (inherits(chisq_result, "try-error") || any(chisq_result$expected < 5)) {
+    fisher_result <- fisher.test(tab, ...)
+    p_val <- fisher_result$p.value
+    method_used <- "Fisher's Exact Test"
+  } else {
+    p_val <- chisq_result$p.value
+    method_used <- "Chi-Squared Test"
+  }
+  
+  # Return a list with at least the p-value
+  return(list(p.value = p_val, method = method_used))
+}
+
+
+my_controls <- arsenal::tableby.control(
+  test = T,
+  total = T,
+  numeric.test = "kwt", cat.test = "custom_cat_test",
+  numeric.stats = c("N", "meansd", "medianq1q3", "range", "Nmiss2"),
+  cat.stats = c("countpct", "Nmiss2"),
+  stats.labels = list(
+    meansd = "Mean (SD)",
+    medianq1q3 = "median (Q1, Q3)",
+    range = "Min - Max",
+    Nmiss2 = "Missing"
+  )
+)
+
+#quarto::quarto_render("First Pass.qmd")
+
+```
+
+
+## Data managment 
+
+Filtered only to rater 4's responses. 
+
+```{r}
+data_3 = readxl::read_xlsx("./data/KETAMINE_updated.xlsx") %>% # reading in data
+  janitor::clean_names() %>% # making all column names lowercase
+   select(clinic_name, rater,contains("location"), 
+          contains("clinic"), everything(), 
+          -other_disorders,
+          - timestamp,
+          -contains("disagreement")) %>% 
+  mutate(
+    clinic_name = recode(clinic_name,"Dr Vs Med Spa"="Dr. V's Med Spa", 
+                         "Mar Y Sol Mental Health Experts" ="Mar y Sol Mental Health Experts",
+                        "Rise And Mind"="Rise and Mind",
+                        "Trifecta Health" ="Trifecta Health NYC",
+                         "Turn The Mind"="Turn the Mind")
+  ) %>% 
+  filter(rater == 3) %>% 
+ 
+  # concatenating state variables
+  mutate(other_pain_head = ifelse(other_pain == 1 | other_headache == 1, 1,0),
+         depressive_disorders = if_else(depression == 1 | other_ppd == 1, 1, 0),
+         other_mh = if_else(other_mh == 1 | eating_disorders == 1, 1, 0),
+         state = case_when( 
+    location_ny == 1 & !location_nj == 1 & !location_ct == 1 ~"Single State",
+    !location_ny == 1 & location_nj == 1 & !location_ct == 1 ~"Single State",
+    !location_ny == 1 & !location_nj == 1 & location_ct == 1 ~"Single State",
+    TRUE ~ "combination"
+  ),
+  state = forcats::fct_relevel(state, "Single State","combination")
+  
+  ) %>% 
+ # mutate_at(vars(location_ny:other_tbi),as.character) %>% 
+  mutate_at(vars(location_ny:depressive_disorders),as.character) %>% 
+   mutate(
+    clinic_telehealth = factor(
+      clinic_telehealth,
+      levels = c(0, 1),
+      labels = c("Telehealth No", "Telehealth Yes")
+    ))
+
+labels <- c("state",
+  "location_ny", "location_nj", "location_ct", "bipolar_disorder", "ocd", "ptsd",
+  "anxiety", "sud","depressive_disorders",
+  "other_pain_head",
+  "other_suicide", "other_mh", "risk", "form_oral",
+  "citations", "promotional", "degree"
+)
+
+acronyms <- c("NY","NJ","CT", "OCD","PTSD", "SUD", "PPD", "MH")
+
+# build pretty labels
+varlabels <- setNames(
+  sapply(labels, function(var) {
+    parts <- str_split(var, "_")[[1]]
+    parts <- sapply(parts, function(w) {
+      if (toupper(w) %in% acronyms) toupper(w)
+      else str_to_title(w)
+    }, USE.NAMES = FALSE)
+    paste(parts, collapse = " ")
+  }, USE.NAMES = FALSE),
+  labels
+)
+
+for (v in names(varlabels)) {
+  label(data_3[[v]]) <- varlabels[v]
+}
+
+#write_csv(data_3,"./data/final_data.csv")
+```
+
+
+## Table 1
+
+```{r, results='asis'}
+arsenal::tableby(clinic_telehealth ~ state+ location_ny+location_nj+location_ct+depressive_disorders+bipolar_disorder+ocd+ptsd+anxiety+sud+other_pain_head+other_suicide+other_mh+risk+form_oral+citations+promotional+degree, 
+                 data = data_3
+   , 
+  control = my_controls) %>% 
+  summary()
+```
+
+## Lasso Selected model
+
+```{r}
+
+library(glmnet)
+library(pROC)
+
+# Building design matrix and outcome
+all_vars <- c(
+  "state",
+  "depressive_disorders", "bipolar_disorder", "ocd", "ptsd",
+  "anxiety", "sud", "other_pain_head", "other_suicide",
+  "other_mh", "risk", "form_oral", "citations",
+  "promotional", "degree"
+)
+
+tablabels <- setNames(
+  sapply(all_vars, function(var) {
+    parts <- str_split(var, "_")[[1]]
+    parts <- sapply(parts, function(w) {
+      if (toupper(w) %in% acronyms) toupper(w)
+      else str_to_title(w)
+    }, USE.NAMES = FALSE)
+    paste(parts, collapse = " ")
+  }, USE.NAMES = FALSE),
+  all_vars
+)
+X <- model.matrix(reformulate(all_vars), data = data_3)[, -1]
+y <- data_3 %>% mutate(clinic_telehealth = recode(clinic_telehealth,"Telehealth No" = 0, "Telehealth Yes" = 1)) %>% pull(clinic_telehealth)
+
+# Generating a fixed 10-fold split
+set.seed(123)
+n <- nrow(data_3)
+foldid <- sample(rep(1:10, length.out = n))
+
+# cross-validated LASSO optimizing AUC
+cv_lasso_auc <- cv.glmnet(
+  x             = X,
+  y             = y,
+  family        = "binomial",
+  alpha         = 1,            # LASSO
+  foldid        = foldid,
+  type.measure  = "auc",        # maximize AUC
+  nfolds        = 10
+)
+
+#  Inspecting the best lambda
+lambda_best <- cv_lasso_auc$lambda.1se
+#cat("Best λ (1-SE rule):", lambda_best, "\n")
+#cat("CV-AUC at λ1se:", max(cv_lasso_auc$cvm), "\n")
+
+# Final variables
+final_coefs <- coef(cv_lasso_auc, s = lambda_best)
+selected_vars <- rownames(final_coefs)[which(final_coefs != 0)][-1]
+#cat("Selected predictors:\n")
+#print(selected_vars)
+
+  
+
+final_mod  <- (robustbase::glmrob(clinic_telehealth ~ form_oral + degree, data = data_3 %>% mutate(clinic_telehealth =recode(clinic_telehealth,"Telehealth No" = 0, "Telehealth Yes" = 1)), 
+                 family = poisson(link = "log"),
+                 na.action = na.omit) %>% summary())$coefficients %>% 
+  as.data.frame() %>% 
+  janitor::clean_names() %>% 
+  rownames_to_column("term") %>%
+  filter(term != "(Intercept)") %>%
+  transmute(
+    term,
+    est       = exp(estimate),
+    conf_low  = exp(estimate - 1.96 * `std_error`),
+    conf_high  = exp(estimate + 1.96 * `std_error`),
+    pval = pr_z
+  ) %>% 
+  mutate_at(vars(est, conf_low, conf_high), ~signif(.,2)) %>% 
+    mutate(conf_high = ifelse(conf_high > 1e6, Inf, conf_high),
+           term =c("Form Oral", "Degree")) 
+
+crude_tbl <- map_dfr(all_vars, function(var) {
+ 
+  #creating formula for crude models
+  fmla <- as.formula(paste0("clinic_telehealth ~ ", var))
+  
+  
+  # crude models and joining to others
+  (robustbase::glmrob(fmla, data = data_3 %>% mutate(clinic_telehealth =recode(clinic_telehealth,"Telehealth No" = 0, "Telehealth Yes" = 1)), 
+                 family = poisson(link = "log")) %>% summary())$coefficients %>% 
+  as.data.frame() %>% 
+  janitor::clean_names() %>% 
+  rownames_to_column("term") %>%
+  filter(term != "(Intercept)") %>%
+  transmute(
+    term,
+    est      = exp(estimate),
+    conf_low  = exp(estimate - 1.96 * `std_error`),
+    conf_high  = exp(estimate + 1.96 * `std_error`),
+    pval = pr_z
+  ) %>%
+    mutate_at(vars(est, conf_low, conf_high), ~signif(.,2)) %>% 
+    mutate(conf_high = ifelse(conf_high > 1e6, Inf, conf_high),
+           term = tibble(tablabels, all_vars) %>% filter(all_vars == var) %>% 
+             pull(tablabels))
+})
+
+#fully adjusted formula
+  full_fmla <- as.formula(paste("clinic_telehealth ~", paste(all_vars, collapse = " + ")))
+  
+  
+  #fully adjusted model
+full_mod  <- (robustbase::glmrob(full_fmla, data = data_3 %>% mutate(clinic_telehealth = as.numeric(clinic_telehealth)), 
+                 family = poisson(link = "log"),
+                 na.action = na.omit) %>% summary())$coefficients %>% 
+  as.data.frame() %>% 
+  janitor::clean_names() %>% 
+  rownames_to_column("term") %>%
+  filter(term != "(Intercept)") %>%
+  transmute(
+    term,
+    est       = exp(estimate),
+    conf_low  = exp(estimate - 1.96 * `std_error`),
+    conf_high  = exp(estimate + 1.96 * `std_error`),
+    pval = pr_z
+  ) %>% 
+  mutate_at(vars(est, conf_low, conf_high), ~signif(.,2)) %>% 
+    mutate(conf_high = ifelse(conf_high > 1e6, Inf, conf_high),
+           term = tablabels,
+           labels =all_vars) 
+
+
+
+
+crude_tbl %>%
+    transmute(
+      term,
+      Crude = sprintf("%0.2f (%0.2f–%0.2f)", est, conf_low, conf_high),
+      `Crude p value` = pval %>% round(.,4)
+    ) %>% 
+  left_join(full_mod %>% 
+  transmute(
+    term,
+    `Fully Adjusted` = sprintf("%0.2f (%0.2f–%0.2f)", est, conf_low, conf_high),
+    `.p value` = pval %>% round(.,4)
+  ),by="term" ) %>% 
+  left_join(final_mod %>% 
+  transmute(
+    term,
+    `Final` = sprintf("%0.2f (%0.2f–%0.2f)", est, conf_low, conf_high),
+    `Final p value` = pval %>% round(.,4)
+  ),by="term" ) %>% 
+  kable("html", align = c("l","c","c","c"),
+        caption = "Adjusted and Crude PRs with CIs") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE) %>%
+  column_spec(1, bold = TRUE) 
+```
+
+
+

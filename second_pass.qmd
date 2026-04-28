@@ -1,0 +1,839 @@
+---
+title: "Survey Instrument Reliability - Ketamine Clinics"
+format: 
+  html:
+    toc: true
+    code-fold: true
+    code-summary: "Show Code"
+    self-contained: true
+---
+
+## Project Code Settings
+
+```{r setup}
+
+#| include: false
+#| message: false
+#| warning: false
+
+knitr::opts_chunk$set(
+  eval = T, warning = F, message = F, echo = T, fig.dim = c(6,3), fig.width = 9, fig.height = 5, dpi = 300, fig.pos = "!h"
+)
+
+packages = c("tidyverse","arsenal","kableExtra")
+
+
+
+suppressWarnings(
+  suppressPackageStartupMessages(invisible(lapply(packages, require, character.only = T))))
+
+
+theme_set(theme_minimal()+
+            theme(legend.position = "bottom")+
+            theme(plot.title = element_text(hjust = 0.5, size = 12),
+                  plot.subtitle= element_text(hjust = 0.5, size = 8)))
+
+custom_cat_test <- function(currcol, bycol, 
+                            chisq.correct = FALSE, 
+                            simulate.p.value = FALSE, 
+                            B = 2000, 
+                            wilcox.correct, 
+                            wilcox.exact, 
+                            test.always, 
+                            ...) {
+  # Create the contingency table
+  tab <- table(currcol, bycol)
+  
+  # Attempt chi-square test without continuity correction (as specified)
+  chisq_result <- try(chisq.test(tab, 
+                                 correct = chisq.correct, 
+                                 simulate.p.value = simulate.p.value, 
+                                 B = B),
+                      silent = TRUE)
+  
+  # If the test fails or expected counts are below 5, use Fisher's exact test
+  if (inherits(chisq_result, "try-error") || any(chisq_result$expected < 5)) {
+    fisher_result <- fisher.test(tab, ...)
+    p_val <- fisher_result$p.value
+    method_used <- "Fisher's Exact Test"
+  } else {
+    p_val <- chisq_result$p.value
+    method_used <- "Chi-Squared Test"
+  }
+  
+  # Return a list with at least the p-value
+  return(list(p.value = p_val, method = method_used))
+}
+
+my_controls <- arsenal::tableby.control(
+  test = T,
+  total = T,
+  numeric.test = "kwt", cat.test = "custom_cat_test",
+  numeric.stats = c("N", "meansd", "medianq1q3", "range", "Nmiss2"),
+  cat.stats = c("countpct", "Nmiss2"),
+  stats.labels = list(
+    meansd = "Mean (SD)",
+    medianq1q3 = "median (Q1, Q3)",
+    range = "Min - Max",
+    Nmiss2 = "Missing"
+  )
+)
+  
+my_controls_row <- arsenal::tableby.control(
+  test = T,
+  total = T,
+  numeric.test = "kwt", cat.test ="custom_cat_test",
+  numeric.stats = c("N", "meansd", "medianq1q3", "range", "Nmiss2"),
+  cat.stats = c("countrowpct", "Nmiss2"),
+  stats.labels = list(
+    meansd = "Mean (SD)",
+    medianq1q3 = "median (Q1, Q3)",
+    range = "Min - Max",
+    Nmiss2 = "Missing"
+  )
+)
+
+#quarto::quarto_render("First Pass.qmd")
+
+```
+
+## Overview
+
+The goal of this analysis is to determine if there is reliability among responses by four raters to various instruments that answer `56` binary (yes/no) questions about `233` Ketamine clinics in the tristate area (NY, NJ, CT). In order to determine reliability we used a Fleiss' Kappa score that accounts for having more than two raters. Reliability scores greater than or equal to `0.60` suggest agreement between raters.
+
+## Data Management
+
+This section contains how the data set is wrangled for analysis. Here are a list of data considerations used to prepare the data for analysis.
+
+-   removed disagreement columns, and timestamp
+-   removed other disorders column because they are expand as individual columns
+-   reshaped the data to conduct the IRR analysis including all 4 raters
+-   attempts to concatenate location, an clinic types
+-   removed clinics that had missing observations
+
+```{r}
+
+data = readxl::read_xlsx("./data/KETAMINE_updated.xlsx") %>% # reading in data
+  janitor::clean_names() %>% # making all column names lowercase
+  select(-contains("disagreement")) %>% # getting rid of pre calculated disagreement by collaborator
+  
+  #These are the names of clinics that were causing the error
+  
+ ## filter(clinic_name %in% c("Dr Vs Med Spa","Dr. V's Med Spa","Mar Y Sol Mental Health Experts","Mar y Sol Mental Health Experts",
+##                                "Rise And Mind","Rise and Mind","Trifecta Health","Trifecta Health NYC", "Turn The Mind","Turn the Mind")) %>% 
+  
+  ## reordering data set column names, and removing variables that are not responses to questions by raters
+  
+  
+  select(clinic_name, rater,contains("location"), contains("clinic"), everything(), -other_disorders, - timestamp) %>% 
+  mutate(
+    clinic_name = recode(clinic_name,"Dr Vs Med Spa"="Dr. V's Med Spa", 
+                         "Mar Y Sol Mental Health Experts" ="Mar y Sol Mental Health Experts",
+                        "Rise And Mind"="Rise and Mind",
+                        "Trifecta Health" ="Trifecta Health NYC",
+                         "Turn The Mind"="Turn the Mind")
+  )
+
+# 
+# data3 = readxl::read_xlsx("./data/Ketamine clinic ratings 3-4-25.xlsx") %>% # reading in data
+#   janitor::clean_names() %>% # making all column names lowercase
+#   select(-contains("disagreement")) %>%
+#    select(clinic_name, rater,contains("location"), contains("clinic"), everything(), -other_disorders) #%>%
+#    filter(clinic_name %in% c("Dr Vs Med Spa","Dr. V's Med Spa","Mar Y Sol Mental Health Experts","Mar y Sol Mental Health Experts",
+#                               "Rise And Mind","Rise and Mind","Trifecta Health","Trifecta Health NYC", "Turn The Mind","Turn the Mind")) %>%
+#   arrange(clinic_name,rater)
+
+
+data_d = readxl::read_xlsx("./data/KETAMINE_updated.xlsx") %>% # reading in data
+  janitor::clean_names() %>% # making all column names lowercase
+   select(clinic_name, rater,contains("location"), 
+          contains("clinic"), everything(), 
+          -other_disorders,
+          - timestamp,
+          -contains("disagreement")) %>% 
+  mutate(
+    clinic_name = recode(clinic_name,"Dr Vs Med Spa"="Dr. V's Med Spa", 
+                         "Mar Y Sol Mental Health Experts" ="Mar y Sol Mental Health Experts",
+                        "Rise And Mind"="Rise and Mind",
+                        "Trifecta Health" ="Trifecta Health NYC",
+                         "Turn The Mind"="Turn the Mind")
+  ) %>% 
+  
+  
+  # building majority rule dataset
+  filter(!rater == 3) %>% 
+  pivot_longer(
+   location_ny:other_tbi,
+   names_to = "questions",
+   values_to = "responses"
+ ) %>% 
+    group_by(clinic_name, questions) %>% 
+    mutate(
+      majority = if_else(mean(responses)>=0.5,1L,0L)
+    ) %>% 
+    
+    
+    #filter(grepl("location",questions,ignore.case = T)) %>% 
+   # arrange(clinic_name, questions,rater) %>% 
+    select(-rater, -responses) %>% 
+    unique()  %>% 
+    
+    pivot_wider(
+      names_from = questions,
+      values_from = majority
+    ) %>%
+    ungroup() %>% 
+  # concatenating state variables
+  mutate(state = case_when( 
+    location_ny == 1 & !location_nj == 1 & !location_ct == 1 ~"New York",
+    !location_ny == 1 & location_nj == 1 & !location_ct == 1 ~"New Jersey",
+    !location_ny == 1 & !location_nj == 1 & location_ct == 1 ~"Connecticut",
+    TRUE ~ "combination"
+  )
+#   ,
+#   
+#   # concatenating clinic types
+#   clinic_type = case_when(
+#   clinic_individual == 1 & clinic_chain == 0 & clinic_hospital == 0 &
+#     clinic_med_spa == 0 & clinic_telehealth == 0 & clinic_home == 0 ~ "individual only",
+#   clinic_individual == 0 & clinic_chain == 1 & clinic_hospital == 0 &
+#     clinic_med_spa == 0 & clinic_telehealth == 0 & clinic_home == 0 ~ "chain only",
+#   clinic_individual == 0 & clinic_chain == 0 & clinic_hospital == 1 &
+#     clinic_med_spa == 0 & clinic_telehealth == 0 & clinic_home == 0 ~ "hospital only",
+#   clinic_individual == 0 & clinic_chain == 0 & clinic_hospital == 0 &
+#     clinic_med_spa == 1 & clinic_telehealth == 0 & clinic_home == 0 ~ "med_spa only",
+#   clinic_individual == 0 & clinic_chain == 0 & clinic_hospital == 0 &
+#     clinic_med_spa == 0 & clinic_telehealth == 1 & clinic_home == 0 ~ "telehealth only",
+#   clinic_individual == 0 & clinic_chain == 0 & clinic_hospital == 0 &
+#     clinic_med_spa == 0 & clinic_telehealth == 0 & clinic_home == 1 ~ "home only",
+#   
+#   clinic_individual == 1 & clinic_chain == 0 & clinic_hospital == 0 &
+#     clinic_med_spa == 0 & clinic_telehealth == 1 & clinic_home == 0 ~ "individual + tele",
+#   
+#   clinic_individual == 0 & clinic_chain == 1 & clinic_hospital == 0 &
+#     clinic_med_spa == 0 & clinic_telehealth == 1 & clinic_home == 0 ~ "chain only + tele",
+#   
+#   clinic_individual == 0 & clinic_chain == 0 & clinic_hospital == 1 &
+#     clinic_med_spa == 0 & clinic_telehealth == 1 & clinic_home == 0 ~ "hospital only + tele",
+#   
+#   clinic_individual == 0 & clinic_chain == 0 & clinic_hospital == 0 &
+#     clinic_med_spa == 1 & clinic_telehealth == 1 & clinic_home == 0 ~ "med_spa only + tele",
+#   
+#   
+#   clinic_individual == 0 & clinic_chain == 0 & clinic_hospital == 0 &
+#     clinic_med_spa == 0 & clinic_telehealth == 1 & clinic_home == 1 ~ "home only + tele",
+#   
+#     clinic_individual == 0 & clinic_chain == 1 & clinic_hospital == 0 &
+#     clinic_med_spa == 1 & clinic_telehealth == 0 & clinic_home == 0 ~ "chain + med-spa",
+#   
+#       clinic_individual == 1 & clinic_chain == 0 & clinic_hospital == 0 &
+#     clinic_med_spa == 1 & clinic_telehealth == 0 & clinic_home == 0 ~ "individual + med-spa",
+#   
+#   TRUE ~ NA_character_
+# )
+  ) %>% 
+  mutate_at(vars(location_ny:other_tbi),as.character)
+ # filter(clinic_name %in% c("Dr Vs Med Spa","Dr. V's Med Spa","Mar Y Sol Mental Health Experts","Mar y Sol Mental Health Experts",
+#                                "Rise And Mind","Rise and Mind","Trifecta Health","Trifecta Health NYC", "Turn The Mind","Turn the Mind")) %>% 
+  
+  #reordering data set column names, and removing variables that are not responses to questions by raters
+  
+
+data_3 = readxl::read_xlsx("./data/KETAMINE_updated.xlsx") %>% # reading in data
+  janitor::clean_names() %>% # making all column names lowercase
+   select(clinic_name, rater,contains("location"), 
+          contains("clinic"), everything(), 
+          -other_disorders,
+          - timestamp,
+          -contains("disagreement")) %>% 
+  mutate(
+    clinic_name = recode(clinic_name,"Dr Vs Med Spa"="Dr. V's Med Spa", 
+                         "Mar Y Sol Mental Health Experts" ="Mar y Sol Mental Health Experts",
+                        "Rise And Mind"="Rise and Mind",
+                        "Trifecta Health" ="Trifecta Health NYC",
+                         "Turn The Mind"="Turn the Mind")
+  ) %>% 
+  filter(rater == 3) %>% 
+ 
+  # concatenating state variables
+  mutate(state = case_when( 
+    location_ny == 1 & !location_nj == 1 & !location_ct == 1 ~"New York",
+    !location_ny == 1 & location_nj == 1 & !location_ct == 1 ~"New Jersey",
+    !location_ny == 1 & !location_nj == 1 & location_ct == 1 ~"Connecticut",
+    TRUE ~ "combination"
+  )
+#   ,
+#   
+#   # concatenating clinic types
+#   clinic_type = case_when(
+#   clinic_individual == 1 & clinic_chain == 0 & clinic_hospital == 0 &
+#     clinic_med_spa == 0 & clinic_telehealth == 0 & clinic_home == 0 ~ "individual only",
+#   clinic_individual == 0 & clinic_chain == 1 & clinic_hospital == 0 &
+#     clinic_med_spa == 0 & clinic_telehealth == 0 & clinic_home == 0 ~ "chain only",
+#   clinic_individual == 0 & clinic_chain == 0 & clinic_hospital == 1 &
+#     clinic_med_spa == 0 & clinic_telehealth == 0 & clinic_home == 0 ~ "hospital only",
+#   clinic_individual == 0 & clinic_chain == 0 & clinic_hospital == 0 &
+#     clinic_med_spa == 1 & clinic_telehealth == 0 & clinic_home == 0 ~ "med_spa only",
+#   clinic_individual == 0 & clinic_chain == 0 & clinic_hospital == 0 &
+#     clinic_med_spa == 0 & clinic_telehealth == 1 & clinic_home == 0 ~ "telehealth only",
+#   clinic_individual == 0 & clinic_chain == 0 & clinic_hospital == 0 &
+#     clinic_med_spa == 0 & clinic_telehealth == 0 & clinic_home == 1 ~ "home only",
+#   
+#   clinic_individual == 1 & clinic_chain == 0 & clinic_hospital == 0 &
+#     clinic_med_spa == 0 & clinic_telehealth == 1 & clinic_home == 0 ~ "individual + tele",
+#   
+#   clinic_individual == 0 & clinic_chain == 1 & clinic_hospital == 0 &
+#     clinic_med_spa == 0 & clinic_telehealth == 1 & clinic_home == 0 ~ "chain only + tele",
+#   
+#   clinic_individual == 0 & clinic_chain == 0 & clinic_hospital == 1 &
+#     clinic_med_spa == 0 & clinic_telehealth == 1 & clinic_home == 0 ~ "hospital only + tele",
+#   
+#   clinic_individual == 0 & clinic_chain == 0 & clinic_hospital == 0 &
+#     clinic_med_spa == 1 & clinic_telehealth == 1 & clinic_home == 0 ~ "med_spa only + tele",
+#   
+#   
+#   clinic_individual == 0 & clinic_chain == 0 & clinic_hospital == 0 &
+#     clinic_med_spa == 0 & clinic_telehealth == 1 & clinic_home == 1 ~ "home only + tele",
+#   
+#     clinic_individual == 0 & clinic_chain == 1 & clinic_hospital == 0 &
+#     clinic_med_spa == 1 & clinic_telehealth == 0 & clinic_home == 0 ~ "chain + med-spa",
+#   
+#       clinic_individual == 1 & clinic_chain == 0 & clinic_hospital == 0 &
+#     clinic_med_spa == 1 & clinic_telehealth == 0 & clinic_home == 0 ~ "individual + med-spa",
+#   
+#   TRUE ~ NA_character_
+# )
+  ) %>% 
+  mutate_at(vars(location_ny:other_tbi),as.character)
+  
+  
+ 
+```
+
+## IRR Analysis
+
+### IRR Analysis overall
+
+::: panel-tabset
+
+
+#### Pair-wise (2)
+
+```{r}
+
+combn(c("0","1","2","3"),2, simplify = F) %>% 
+  map_dfr(~{
+    pair_data = data %>% 
+  
+  
+  # creating a response id for each rater (basically a response for every clinic)
+  group_by(rater) %>% 
+   mutate(response_id = row_number()) %>% 
+  
+  # reshaping the dataset to match form of the irr package 
+  pivot_longer(cols = location_ny:other_tbi,
+    names_to = "questions",
+    values_to = "responses"
+  ) %>% 
+  pivot_wider(
+    names_from = rater,
+    values_from = responses
+  ) %>% 
+  
+  # making the raters responses factors
+  mutate_at(vars(`0`,`1`,`2`,`3`),factor) %>% 
+  # only retaining the responses of each rater for the analysis (removing id columns)
+  select(-response_id, -questions) %>% 
+# conducting anlaysis for overall level of agreement
+    select(all_of(.x))
+    
+    
+# compute kappa
+    kappa_val = irr::kappa2(pair_data)$value
+    
+# make table 
+    tibble(rater1 = .x[1], rater2 = .x[2], kappa = kappa_val)
+  }) %>% 
+  
+# arrange scores
+  arrange(-kappa) %>% 
+  
+# formatt table 
+  formattable::formattable()
+
+
+
+
+
+```
+
+#### Pair-wise (3)
+
+```{r}
+
+
+
+combn(c("0","1","2","3"),3, simplify = F) %>% 
+  map_dfr(~{
+    pair_data = data %>% 
+  
+  
+  # creating a response id for each rater (basically a response for every clinic)
+  group_by(rater) %>% 
+   mutate(response_id = row_number()) %>% 
+  
+  # reshaping the dataset to match form of the irr package 
+  pivot_longer(cols = location_ny:other_tbi,
+    names_to = "questions",
+    values_to = "responses"
+  ) %>% 
+  pivot_wider(
+    names_from = rater,
+    values_from = responses
+  ) %>% 
+  
+  # making the raters responses factors
+  mutate_at(vars(`0`,`1`,`2`,`3`),factor) %>% 
+  # only retaining the responses of each rater for the analysis (removing id columns)
+  select(-response_id, -questions) %>% 
+# conducting anlaysis for overall level of agreement
+    select(all_of(.x))
+    
+    
+# compute kappa
+    kappa_val = irr::kappam.fleiss(pair_data)$value
+    
+# make table 
+    tibble(rater1 = .x[1], rater2 = .x[2], rater3 = .x[3], kappa = kappa_val)
+  }) %>% 
+  
+# arrange scores
+  arrange(-kappa) %>% 
+  
+# format table 
+  formattable::formattable()
+
+
+
+
+```
+
+:::
+
+
+
+### IRR Analysis group
+
+
+::: panel-tabset
+
+#### pair-wise (2)
+
+In this section the Kappa scores for groups that include more than one instrument are presented.
+
+```{r}
+
+
+group_data = data %>% 
+  
+  
+  # creating a response id for each rater (basically a response for every clinic)
+  group_by(rater) %>% 
+   mutate(response_id = row_number()) %>% 
+  rename_at(vars(depression:eating_disorders),~paste0("disorder_",.)) %>% 
+  
+  # reshaping the dataset to match form need for the irr package 
+  pivot_longer(cols = location_ny:other_tbi,
+    names_to = "questions",
+    values_to = "responses"
+  ) %>% 
+  pivot_wider(
+    names_from = rater,
+    values_from = responses
+  ) %>% 
+  mutate(question_group = case_when(
+    grepl("location",questions,ignore.case = T)~ "location",
+     grepl("visits",questions,ignore.case = T)~ "visits",
+     grepl("types",questions,ignore.case = T)~ "types",
+     grepl("form",questions,ignore.case = T)~ "form",
+     grepl("clinic",questions,ignore.case = T)~ "clinic",
+     grepl("degree",questions,ignore.case = T)~ "degree",
+    grepl("cost",questions,ignore.case = T)~ "cost",
+    grepl("insurance",questions,ignore.case = T)~ "insurance",
+    grepl("disorder",questions,ignore.case = T)~ "conditions",
+    grepl("promotional",questions,ignore.case = T)~ "promotional",
+    grepl("benefits",questions,ignore.case = T)~ "benefits",
+    grepl("citations",questions,ignore.case = T)~ "citations",
+    grepl("risk",questions,ignore.case = T)~ "risk",
+    grepl("other",questions,ignore.case = T)~ "other_conditions"
+    
+  )) %>% 
+  
+  # making the raters responses factors
+  mutate_at(vars(`0`,`1`,`2`,`3`),factor) 
+
+
+# creating table of kappa scores by group
+  
+   group_data %>% 
+      filter(question_group %in% c("visits","clinic","location","form","conditions","other_conditions")) %>% 
+      group_by(question_group) %>% 
+      nest() %>% 
+  mutate(pairwise = map(data, function(df){
+                          combn(c("0","1","2","3"),2, simplify = F) %>% 
+                            map_dfr(function(pair_cols){
+                              tibble(
+                                rater1 = pair_cols[1],
+                                rater2 = pair_cols[2],
+                                kappa = irr::kappa2(df %>%  select(all_of(pair_cols)))$value
+                              )
+                            })
+                        })) %>% 
+  unnest(pairwise) %>% 
+     select(question_group, rater1, rater2, kappa) %>% 
+    arrange(question_group,-kappa) %>%
+    #rename("Group" = "groups", "Kappa Score"= "kapp_score") %>% 
+    formattable::formattable()
+  
+```
+
+
+#### pair-wise (3)
+
+In this section the Kappa scores for groups that include more than one instrument are presented.
+
+```{r}
+
+
+# creating table of kappa scores by group
+  
+   group_data %>% 
+      filter(question_group %in% c("visits","clinic","location","form","conditions","other_conditions")) %>% 
+      group_by(question_group) %>% 
+      nest() %>% 
+  mutate(pairwise = map(data, function(df){
+                          combn(c("0","1","2","3"),3, simplify = F) %>% 
+                            map_dfr(function(pair_cols){
+                              tibble(
+                                rater1 = pair_cols[1],
+                                rater2 = pair_cols[2],
+                                rater3 = pair_cols[3],
+                                kappa = irr::kappam.fleiss(df %>%  select(all_of(pair_cols)))$value
+                              )
+                            })
+                        })) %>% 
+  unnest(pairwise) %>% 
+     select(question_group, rater1, rater2, rater3, kappa) %>% 
+    arrange(question_group,-kappa) %>%
+    #rename("Group" = "groups", "Kappa Score"= "kapp_score") %>% 
+    formattable::formattable()
+  
+```
+
+
+:::
+
+### IRR Analysis Instrument
+
+
+::: panel-tabset
+
+#### pair-wise (2)
+
+In this section the Kappa scores for individual instruments
+
+```{r}
+
+
+# creating table of kappa scores by instrument
+  
+   group_data %>% 
+      group_by(questions) %>% 
+      nest() %>% 
+  mutate(pairwise = map(data, function(df){
+                          combn(c("0","1","2","3"),2, simplify = F) %>% 
+                            map_dfr(function(pair_cols){
+                              tibble(
+                                rater1 = pair_cols[1],
+                                rater2 = pair_cols[2],
+                                kappa = irr::kappa2(df %>%  select(all_of(pair_cols)))$value
+                              )
+                            })
+                        })) %>% 
+  unnest(pairwise) %>% 
+     select(questions, rater1, rater2, kappa) %>% 
+    arrange(questions,-kappa) %>%
+    #rename("Group" = "groups", "Kappa Score"= "kapp_score") %>% 
+    formattable::formattable()
+  
+```
+
+
+#### pair-wise (3)
+
+In this section the Kappa scores for individual instruments
+
+```{r}
+
+
+# creating table of kappa scores by instrument
+  
+   group_data %>% 
+      group_by(questions) %>% 
+      nest() %>% 
+  mutate(pairwise = map(data, function(df){
+                          combn(c("0","1","2","3"),3, simplify = F) %>% 
+                            map_dfr(function(pair_cols){
+                              tibble(
+                                rater1 = pair_cols[1],
+                                rater2 = pair_cols[2],
+                                 rater3 = pair_cols[3],
+                                kappa = irr::kappam.fleiss(df %>%  select(all_of(pair_cols)))$value
+                              )
+                            })
+                        })) %>% 
+  unnest(pairwise) %>% 
+     select(questions, rater1, rater2, rater3, kappa) %>% 
+    arrange(questions,-kappa) %>%
+    #rename("Group" = "groups", "Kappa Score"= "kapp_score") %>% 
+    formattable::formattable()
+  
+```
+
+
+:::
+
+### IRR Analysis by clinic
+
+In this section the Kappa scores by clinic
+
+::: panel-tabset
+
+#### pair-wise (2)
+
+
+
+```{r}
+
+#preping data:
+
+data2 = data %>% 
+  group_by(rater) %>% 
+  # mutate(response_id = row_number()) %>% 
+  rename_at(vars(depression:eating_disorders),~paste0("disorder_",.)) %>% 
+  
+  # reshaping the dataset to match form need for the irr package 
+  pivot_longer(cols = location_ny:other_tbi,
+    names_to = "questions",
+    values_to = "responses"
+  ) %>% 
+  pivot_wider(
+    names_from = rater,
+    values_from = responses
+  ) %>% 
+  mutate(question_group = case_when(
+    grepl("location",questions,ignore.case = T)~ "location",
+     grepl("visits",questions,ignore.case = T)~ "visits",
+     grepl("types",questions,ignore.case = T)~ "types",
+     grepl("form",questions,ignore.case = T)~ "form",
+     grepl("clinic",questions,ignore.case = T)~ "clinic",
+     grepl("degree",questions,ignore.case = T)~ "degree",
+    grepl("cost",questions,ignore.case = T)~ "cost",
+    grepl("insurance",questions,ignore.case = T)~ "insurance",
+    grepl("disorder",questions,ignore.case = T)~ "conditions",
+    grepl("promotional",questions,ignore.case = T)~ "promotional",
+    grepl("benefits",questions,ignore.case = T)~ "benefits",
+    grepl("citations",questions,ignore.case = T)~ "citations",
+    grepl("risk",questions,ignore.case = T)~ "risk",
+    grepl("other",questions,ignore.case = T)~ "other_conditions"
+    
+  )) %>% 
+  
+  # making the raters responses factors
+  mutate_at(vars(`0`,`1`,`2`,`3`),factor) 
+
+
+# creating table of kappa scores by instrument
+  # Dr Vs Med Spa only has information from rater 0
+   data2 %>% 
+      group_by(clinic_name) %>% 
+      nest() %>% 
+  mutate(pairwise = map(data, function(df){
+                          combn(c("0","1","2","3"),2, simplify = F) %>% 
+                            map_dfr(function(pair_cols){
+                              tibble(
+                                rater1 = pair_cols[1],
+                                rater2 = pair_cols[2],
+                                kappa = irr::kappa2(df %>%  select(all_of(pair_cols)))$value
+                              )
+                            })
+                        })) %>% 
+  unnest(pairwise) %>% 
+     select(clinic_name, rater1, rater2, kappa) %>% 
+    arrange(clinic_name,-kappa) %>%
+    rename("Clinic" = "clinic_name") %>% 
+    formattable::formattable()
+  
+```
+
+
+
+
+
+
+#### pair-wise (3)
+
+In this section the Kappa scores for individual instruments
+
+```{r}
+
+
+# creating table of kappa scores by instrument
+  
+     data2 %>% 
+      group_by(clinic_name) %>% 
+      nest() %>% 
+  mutate(pairwise = map(data, function(df){
+                          combn(c("0","1","2","3"),3, simplify = F) %>% 
+                            map_dfr(function(pair_cols){
+                              tibble(
+                                rater1 = pair_cols[1],
+                                rater2 = pair_cols[2],
+                                rater3 = pair_cols[3],
+                                kappa = irr::kappam.fleiss(df %>%  select(all_of(pair_cols)))$value
+                              )
+                            })
+                        })) %>% 
+  unnest(pairwise) %>% 
+     select(clinic_name, rater1, rater2, rater3, kappa) %>% 
+    arrange(clinic_name,-kappa) %>%
+    rename("Clinic" = "clinic_name") %>% 
+    formattable::formattable()
+  
+```
+
+:::
+
+
+
+## Discriptive Statistics
+
+
+
+### State + combination
+
+::: panel-tabset
+
+#### Among raters 1,2,3
+
+We used majority rules to assign binary indicator for individual instruments. Given there are 3 independent raters there are no ties. 
+
+
+
+```{r, results='asis'}
+
+ arsenal::tableby(state ~ ., data = data_d %>% select(-clinic_name, -contains("location"),location_virtual), control = my_controls) %>% 
+  summary()
+
+```
+
+#### Among rater 4
+
+These are discriptive tables using only rater 4's responses. 
+
+```{r, results='asis'}
+
+
+arsenal::tableby(state ~ ., data = data_3 %>% select(-clinic_name,-rater, -contains("location"),location_virtual), control = my_controls) %>% 
+  summary()
+
+```
+
+:::
+
+### State + no combination
+
+::: panel-tabset
+
+#### Among raters 1,2,3
+
+We used majority rules to assign binary indicator for individual instruments. Given there are 3 independent raters there are no ties. 
+
+
+```{r, results='asis'}
+
+
+arsenal::tableby(state ~ ., data = data_d %>% select(-clinic_name, -contains("location"),location_virtual) %>% filter(!state == "combination" ), control = my_controls) %>% 
+  summary()
+
+```
+
+
+#### Among rater 4
+
+These are discriptive tables using only rater 4's responses. 
+
+```{r, results='asis'}
+
+
+arsenal::tableby(state ~ ., data = data_3 %>% select(-clinic_name,-rater, -contains("location"),location_virtual) %>% filter(!state == "combination" ), control = my_controls) %>% 
+  summary()
+
+```
+
+:::
+
+### Virtual Location
+
+::: panel-tabset
+
+#### Among raters 1,2,3
+
+We used majority rules to assign binary indicator for individual instruments. Given there are 3 independent raters there are no ties. 
+
+
+```{r, results='asis'}
+
+arsenal::tableby(location_virtual ~ ., data = data_d %>% select(-clinic_name,  -contains("location"),location_virtual), control = my_controls) %>% 
+  summary()
+```
+
+#### Among rater 4
+
+These are discriptive tables using only rater 4's responses. 
+
+
+```{r, results='asis'}
+
+arsenal::tableby(location_virtual ~ ., data = data_3 %>% select(-clinic_name,-rater,  -contains("location"),location_virtual), control = my_controls) %>% 
+  summary()
+```
+
+:::
+
+
+### Virtual Visits
+
+::: panel-tabset
+
+#### Among raters 1,2,3
+
+We used majority rules to assign binary indicator for individual instruments. Given there are 3 independent raters there are no ties. 
+
+```{r, results='asis'}
+arsenal::tableby(visits_virtual ~ ., data = data_d %>% select(-clinic_name, -contains("location"),location_virtual), control = my_controls) %>% 
+  summary()
+```
+
+
+#### Among rater 4
+
+These are discriptive tables using only rater 4's responses. 
+
+
+```{r, results='asis'}
+arsenal::tableby(visits_virtual ~ ., data = data_3 %>% select(-clinic_name,-rater, -contains("location"),location_virtual), control = my_controls) %>% 
+  summary()
+```
+
+:::
