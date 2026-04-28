@@ -25,9 +25,8 @@ Rendered output: `regularized_models.html` (self-contained; see above).
 | File | Role |
 |------|------|
 | `ketamine data all rater .xlsx` | Primary multi-rater spreadsheet: clinic names, `rater` id, timestamps and **disagreement** columns stripped in code; used for IRR and reshaping logic in `inter_rater_reliability.qmd`. |
-| `KETAMINE_updated.xlsx` | Derived/updated workbook with the same broad layout; used where the IRR document builds majority-rule (`data_d`) and single-rater (`data_3`) analytic sets, and by `regularized_models.qmd` (rater `3` corresponds to **rater column value 3**, documented in the notebook as **rater 4** in plain language). |
+| `KETAMINE_updated.xlsx` | An older dataset that when cleaned results in | `ketamine data all rater .xlsx` | the  workbook with the same broad layout; used where the IRR document builds majority-rule (`data_d`) and single-rater (`data_3`) analytic sets, and by `regularized_models.qmd` (rater `3` corresponds to **rater column value 3**, documented in the notebook as **rater 4** in plain language). |
 
-Place both spreadsheets under `data/` as shown. If `KETAMINE_updated.xlsx` is absent, chunks that depend on it will fail at render time.
 
 ## Suggested rendering
 
