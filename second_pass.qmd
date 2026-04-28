@@ -113,7 +113,7 @@ This section contains how the data set is wrangled for analysis. Here are a list
 
 ```{r}
 
-data = readxl::read_xlsx("./data/KETAMINE_updated.xlsx") %>% # reading in data
+data = readxl::read_xlsx("./data/ketamine data all rater .xlsx") %>% # reading in data
   janitor::clean_names() %>% # making all column names lowercase
   select(-contains("disagreement")) %>% # getting rid of pre calculated disagreement by collaborator
   
