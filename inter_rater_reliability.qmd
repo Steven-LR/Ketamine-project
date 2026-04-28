@@ -1,5 +1,5 @@
 ---
-title: "Survey Instrument Reliability - Ketamine Clinics"
+title: "Inter-rater reliability — Ketamine clinics"
 format: 
   html:
     toc: true
@@ -716,7 +716,7 @@ In this section the Kappa scores for individual instruments
 
 
 
-## Discriptive Statistics
+## Descriptive Statistics
 
 
 
@@ -739,7 +739,7 @@ We used majority rules to assign binary indicator for individual instruments. Gi
 
 #### Among rater 4
 
-These are discriptive tables using only rater 4's responses. 
+These are descriptive tables using only rater 4's responses. 
 
 ```{r, results='asis'}
 
@@ -771,7 +771,7 @@ arsenal::tableby(state ~ ., data = data_d %>% select(-clinic_name, -contains("lo
 
 #### Among rater 4
 
-These are discriptive tables using only rater 4's responses. 
+These are descriptive tables using only rater 4's responses. 
 
 ```{r, results='asis'}
 
@@ -800,7 +800,7 @@ arsenal::tableby(location_virtual ~ ., data = data_d %>% select(-clinic_name,  -
 
 #### Among rater 4
 
-These are discriptive tables using only rater 4's responses. 
+These are descriptive tables using only rater 4's responses. 
 
 
 ```{r, results='asis'}
@@ -828,7 +828,7 @@ arsenal::tableby(visits_virtual ~ ., data = data_d %>% select(-clinic_name, -con
 
 #### Among rater 4
 
-These are discriptive tables using only rater 4's responses. 
+These are descriptive tables using only rater 4's responses. 
 
 
 ```{r, results='asis'}

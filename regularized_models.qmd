@@ -1,5 +1,5 @@
 ---
-title: "Tabels + Models"
+title: "Tables + models"
 format: 
   html:
     toc: true
@@ -83,7 +83,7 @@ my_controls <- arsenal::tableby.control(
 ```
 
 
-## Data managment 
+## Data management 
 
 Filtered only to rater 4's responses. 
 
