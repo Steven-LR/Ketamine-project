@@ -142,6 +142,8 @@ all_vars <- c(
   
 )
 
+acronyms <- c("NY","NJ","CT", "OCD","PTSD", "SUD", "PPD", "MH")
+
 tablabels <- setNames(
   sapply(all_vars, function(var) {
     parts <- str_split(var, "_")[[1]]
