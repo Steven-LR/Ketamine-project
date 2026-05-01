@@ -88,72 +88,7 @@ my_controls <- arsenal::tableby.control(
 Filtered only to rater 4's responses. 
 
 ```{r}
-data_3 = readxl::read_xlsx("../data/KETAMINE_updated.xlsx") %>% # reading in data
-  janitor::clean_names() %>% # making all column names lowercase
-   select(clinic_name, rater,contains("location"), 
-          contains("clinic"), everything(), 
-          -other_disorders,
-          - timestamp,
-          -contains("disagreement")) %>% 
-  mutate(
-    clinic_name = recode(clinic_name,"Dr Vs Med Spa"="Dr. V's Med Spa", 
-                         "Mar Y Sol Mental Health Experts" ="Mar y Sol Mental Health Experts",
-                        "Rise And Mind"="Rise and Mind",
-                        "Trifecta Health" ="Trifecta Health NYC",
-                         "Turn The Mind"="Turn the Mind")
-  ) %>% 
-  filter(rater == 3) %>% 
- 
-  # concatenating state variables
-  mutate(other_pain_head = ifelse(other_pain == 1 | other_headache == 1, 1,0),
-         depressive_disorders = if_else(depression == 1 | other_ppd == 1, 1, 0),
-         other_mh = if_else(other_mh == 1 | eating_disorders == 1, 1, 0),
-         state = case_when( 
-    location_ny == 1 & !location_nj == 1 & !location_ct == 1 ~"Single State",
-    !location_ny == 1 & location_nj == 1 & !location_ct == 1 ~"Single State",
-    !location_ny == 1 & !location_nj == 1 & location_ct == 1 ~"Single State",
-    TRUE ~ "combination"
-  ),
-  state = forcats::fct_relevel(state, "Single State","combination")
-  
-  ) %>% 
- # mutate_at(vars(location_ny:other_tbi),as.character) %>% 
-  mutate_at(vars(location_ny:depressive_disorders),as.character) %>% 
-   mutate(
-    clinic_telehealth = factor(
-      clinic_telehealth,
-      levels = c(0, 1),
-      labels = c("Telehealth No", "Telehealth Yes")
-    ))
 
-labels <- c("state",
-  "location_ny", "location_nj", "location_ct", "bipolar_disorder", "ocd", "ptsd",
-  "anxiety", "sud","depressive_disorders",
-  "other_pain_head",
-  "other_suicide", "other_mh", "risk", "form_oral",
-  "citations", "promotional", "degree"
-)
-
-acronyms <- c("NY","NJ","CT", "OCD","PTSD", "SUD", "PPD", "MH")
-
-# build pretty labels
-varlabels <- setNames(
-  sapply(labels, function(var) {
-    parts <- str_split(var, "_")[[1]]
-    parts <- sapply(parts, function(w) {
-      if (toupper(w) %in% acronyms) toupper(w)
-      else str_to_title(w)
-    }, USE.NAMES = FALSE)
-    paste(parts, collapse = " ")
-  }, USE.NAMES = FALSE),
-  labels
-)
-
-for (v in names(varlabels)) {
-  label(data_3[[v]]) <- varlabels[v]
-}
-
-#write_csv(data_3,"./data/final_data.csv")
 
 data_3 = read_csv("../data/final_data.csv") %>% 
   mutate(clinic_id = row_number()) %>% 
@@ -174,55 +109,19 @@ data_3 = read_csv("../data/final_data.csv") %>%
   ) %>% 
   mutate_at(vars(location_ny:depressive_disorders),as.character) 
 
-labels <- c("state",
-  "location_ny", "location_nj", "location_ct", "bipolar_disorder", "ocd", "ptsd",
-  "anxiety", "sud","depressive_disorders",
-  "other_pain_head",
-  "other_suicide", "other_mh", "risk", "form_oral",
-  "citations", "promotional", "degree"
-)
-
-acronyms <- c("NY","NJ","CT", "OCD","PTSD", "SUD", "PPD", "MH")
-
-# build pretty labels
-varlabels <- setNames(
-  sapply(labels, function(var) {
-    parts <- str_split(var, "_")[[1]]
-    parts <- sapply(parts, function(w) {
-      if (toupper(w) %in% acronyms) toupper(w)
-      else str_to_title(w)
-    }, USE.NAMES = FALSE)
-    paste(parts, collapse = " ")
-  }, USE.NAMES = FALSE),
-  labels
-)
-
-for (v in names(varlabels)) {
-  label(data_3[[v]]) <- varlabels[v]
-}
-
-
-
-
 ```
 
 
 ## Table 1
 
 ```{r, results='asis'}
+
 arsenal::tableby( ~ state+visits_virtual+degree+depression+anxiety+ptsd+ocd+other_pain_head+bipolar_disorder+sud+other_suicide+other_mh+form_oral+promotional+risk+citations, 
                  data = data_3
    , 
   control = my_controls) %>% 
   summary()
 
-# "Advertise Ketamine Prescribed to be Used at Home": Not sure what this referes to
-## labeled as visitis_virual but visits_virtual	
-  # 0	150 (64.4%) 148 in table 1
-  # 1	83 (35.6%)  85
-# pain missing ( listed as "other pain" in older datasets)
-# suicidal ideation missing (listed as "other suicide" in older datasets)
-# other disorder values are off ( other these all the other disorders except suicide and pain?)
 
 ```
 
